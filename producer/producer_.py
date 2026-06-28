@@ -1,9 +1,12 @@
 import asyncio
+import os
 import aio_pika
 import json
+from dotenv import load_dotenv
 
 
-CLOUDAMQP_URL = "amqps://ivndelvt:gs1Fmh81WXlTAvyYFMURyJmjFOHWWplf@warthog.lmq.cloudamqp.com/ivndelvt"
+load_dotenv()
+CLOUDAMQP_URL = os.environ.get("CLOUDAMQP_URL")
 
 
 async def main():

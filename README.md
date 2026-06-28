@@ -1,3 +1,5 @@
+# solid-potato
+
 Pritam bro tui jodi dekhchish then ektu clone korish repo and windows er part ta test korish
 
 clone it

@@ -25,7 +25,7 @@ from pathlib import Path
 
 # Reuse your existing risk scorer
 try:
-    from risk_scoring import score_events
+    from risk_scoring import score_event
 except ImportError:
     print("[SOC] risk_scoring.py not found - using default scoring")
     def score_event(event):

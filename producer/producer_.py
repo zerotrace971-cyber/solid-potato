@@ -2,8 +2,10 @@ import asyncio
 import os
 import aio_pika
 import json
+from dotenv import load_dotenv
 
 
+load_dotenv()
 CLOUDAMQP_URL = os.environ.get("CLOUDAMQP_URL")
 
 

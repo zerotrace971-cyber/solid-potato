@@ -1,9 +1,10 @@
 import asyncio
+import os
 import aio_pika
 import json
 
 
-CLOUDAMQP_URL = "amqps://ivndelvt:gs1Fmh81WXlTAvyYFMURyJmjFOHWWplf@warthog.lmq.cloudamqp.com/ivndelvt"
+CLOUDAMQP_URL = os.environ.get("CLOUDAMQP_URL")
 
 
 async def main():

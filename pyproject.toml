@@ -1,7 +1,7 @@
 [project]
 name = "solid-potato"
 version = "0.1.0"
-description = "Add your description here"
+description = "ARGUS — SOC log collection, risk scoring, and alerting system"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

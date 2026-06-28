@@ -28,27 +28,6 @@ SERVICE_USERS = ["www-data", "nginx", "apache", "mysql", "postgres", "redis",
 
 KNOWN_BAD_IP_PREFIXES = ["185.", "45.", "91.", "194."]
 
-# in risk_scoring.py
-def score_events(event):
-    et = event.get("event_type")
-    if et == "FIREWALL_EVENT":
-        if event.get("suspicious_port"):
-            return {"risk_score": 60, "risk_level": "MEDIUM",
-                    "reasons": [f"probe of {event['suspicious_port']}"],
-                    "scored_at": datetime.utcnow().isoformat()}
-        if event.get("action") == "BLOCK":
-            return {"risk_score": 20, "risk_level": "LOW",
-                    "reasons": ["firewall block"],
-                    "scored_at": datetime.utcnow().isoformat()}
-    if et == "OOM_KILL":
-        return {"risk_score": 70, "risk_level": "HIGH",
-                "reasons": ["OOM kill"], "scored_at": datetime.utcnow().isoformat()}
-    if et == "CRON_EXEC" and event.get("user") == "root":
-        return {"risk_score": 30, "risk_level": "LOW",
-                "reasons": ["root cron"], "scored_at": datetime.utcnow().isoformat()}
-    # ... fall through to your existing logic
-
-
 def is_private_ip(ip):
     if not ip:
         return False

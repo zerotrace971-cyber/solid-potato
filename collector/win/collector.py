@@ -10,8 +10,8 @@ from pathlib import Path
 from risk_scoring import score_event
 
 OUTPUT_DIR = Path(r"C:\soc-logs")
-ALERT_LOG = OUTPUT_DIR / "windows_alerts.jsonl"
-EVENT_LOG = OUTPUT_DIR / "windows_events.jsonl"
+ALERT_LOG = OUTPUT_DIR / "win.log" / "windows_alerts.jsonl"
+EVENT_LOG = OUTPUT_DIR / "win.log" / "windows_events.jsonl"
 
 IP_PATTERN = r"(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})"
 

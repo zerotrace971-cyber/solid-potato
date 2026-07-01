@@ -5,8 +5,8 @@
 
 set -e
 
-INSTALL_DIR="/opt/soc/collectors"
-LOG_DIR="/opt/soc/logs"
+INSTALL_DIR="/opt/soc-testing/collectors"
+LOG_DIR="/opt/soc-testing/logs"
 SERVICE_USER="root"
 
 echo "[ARGUS] Installing Linux collectors..."
@@ -18,19 +18,19 @@ mkdir -p "$LOG_DIR"
 # 2. Copy collector files (assumes they're in current directory)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-if [ -f "$SCRIPT_DIR/auth_collector.py" ]; then
-    cp "$SCRIPT_DIR/auth_collector.py" "$INSTALL_DIR/"
-    echo "[ARGUS] Copied auth_collector.py"
+if [ -f "$SCRIPT_DIR/collector.py" ]; then
+    cp "$SCRIPT_DIR/collector.py" "$INSTALL_DIR/"
+    echo "[ARGUS] Copied collector.py"
 else
-    echo "[ARGUS] ERROR: auth_collector.py not found in $SCRIPT_DIR"
+    echo "[ARGUS] ERROR: collector.py not found in $SCRIPT_DIR"
     exit 1
 fi
 
-if [ -f "$SCRIPT_DIR/system_firewall_collector.py" ]; then
-    cp "$SCRIPT_DIR/system_firewall_collector.py" "$INSTALL_DIR/"
-    echo "[ARGUS] Copied system_firewall_collector.py"
+if [ -f "$SCRIPT_DIR/firewall_collector.py" ]; then
+    cp "$SCRIPT_DIR/firewall_collector.py" "$INSTALL_DIR/"
+    echo "[ARGUS] Copied firewall_collector.py"
 else
-    echo "[ARGUS] WARNING: system_firewall_collector.py not found, skipping"
+    echo "[ARGUS] WARNING: firewall_collector.py not found, skipping"
 fi
 
 if [ -f "$SCRIPT_DIR/risk_scoring.py" ]; then
@@ -53,21 +53,21 @@ Documentation=https://github.com/your-org/argus
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/opt/soc/collectors
-ExecStart=/usr/bin/python3 /opt/soc/collectors/auth_collector.py
+WorkingDirectory=/opt/soc-testing/collectors
+ExecStart=/usr/bin/python3 /opt/soc-testing/collectors/auth_collector.py
 Restart=always
 RestartSec=5
 StartLimitInterval=60
 StartLimitBurst=3
 
 # Logging
-StandardOutput=append:/opt/soc/logs/auth.out.log
-StandardError=append:/opt/soc/logs/auth.err.log
+StandardOutput=append:/opt/soc-testing/logs/auth.out.log
+StandardError=append:/opt/soc-testing/logs/auth.err.log
 
 # Security hardening
 NoNewPrivileges=true
 ProtectSystem=strict
-ReadWritePaths=/opt/soc/logs /var/log
+ReadWritePaths=/opt/soc-testing/logs /var/log
 ProtectHome=true
 PrivateTmp=true
 
@@ -87,21 +87,21 @@ Documentation=https://github.com/your-org/argus
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/opt/soc/collectors
-ExecStart=/usr/bin/python3 /opt/soc/collectors/system_firewall_collector.py
+WorkingDirectory=/opt/soc-testing/collectors
+ExecStart=/usr/bin/python3 /opt/soc-testing/collectors/system_firewall_collector.py
 Restart=always
 RestartSec=5
 StartLimitInterval=60
 StartLimitBurst=3
 
 # Logging
-StandardOutput=append:/opt/soc/logs/system.out.log
-StandardError=append:/opt/soc/logs/system.err.log
+StandardOutput=append:/opt/soc-testing/logs/system.out.log
+StandardError=append:/opt/soc-testing/logs/system.err.log
 
 # Security hardening
 NoNewPrivileges=true
 ProtectSystem=strict
-ReadWritePaths=/opt/soc/logs /var/log
+ReadWritePaths=/opt/soc-testing/logs /var/log
 ProtectHome=true
 PrivateTmp=true
 
@@ -113,7 +113,7 @@ echo "[ARGUS] Created /etc/systemd/system/argus-system.service"
 
 # 6. Create logrotate config (prevent disk fill)
 cat > /etc/logrotate.d/argus << 'EOF'
-/opt/soc/logs/*.log {
+/opt/soc-testing/logs/*.log {
     daily
     rotate 14
     compress
@@ -127,7 +127,7 @@ cat > /etc/logrotate.d/argus << 'EOF'
     endscript
 }
 
-/opt/soc/logs/*.jsonl {
+/opt/soc-testing/logs/*.jsonl {
     daily
     rotate 7
     compress
@@ -163,7 +163,7 @@ echo "Useful commands:"
 echo "  sudo systemctl status argus-auth"
 echo "  sudo systemctl status argus-system"
 echo "  sudo journalctl -u argus-auth -f"
-echo "  sudo tail -f /opt/soc/logs/auth.out.log"
-echo "  sudo tail -f /opt/soc/logs/system.out.log"
+echo "  sudo tail -f /opt/soc-testing/logs/auth.out.log"
+echo "  sudo tail -f /opt/soc-testing/logs/system.out.log"
 echo ""
-echo "To uninstall: sudo /opt/soc/collectors/uninstall_service_linux.sh"
+echo "To uninstall: sudo /opt/soc-testing/collectors/uninstall_service_linux.sh"

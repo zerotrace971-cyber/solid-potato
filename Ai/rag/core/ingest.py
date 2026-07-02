@@ -145,7 +145,8 @@ def load_sigma_dir() -> List[Chunk]:
 
     chunks = []
     count = 0
-    for yaml_file in sigma_root.rglob("*.yml"):
+    sigma_files = list(sigma_root.rglob("*.yml")) + list(sigma_root.rglob("*.yaml"))
+    for yaml_file in sigma_files:
         try:
             with open(yaml_file) as f:
                 rule = yaml.safe_load(f)

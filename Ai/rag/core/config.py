@@ -25,7 +25,7 @@ BM25_WEIGHT = 0.3
 VECTOR_WEIGHT = 0.7       
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-GEMINI_MODEL = "gemini-1.5-flash"
+GEMINI_MODEL = "gemini-2.5-flash"
 GEMINI_MAX_TOKENS = 2048
 GEMINI_TEMPERATURE = 0.2
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")

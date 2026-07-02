@@ -38,8 +38,6 @@ class Retriever:
     def __init__(self, collection_name: str = COLLECTION_NAME):
         if chromadb is None or Settings is None:
             raise ImportError("chromadb is required for retrieval")
-        if BM25Okapi is None:
-            raise ImportError("rank_bm25 is required for retrieval")
 
         # Vector store
         self.chroma = chromadb.PersistentClient(
@@ -62,6 +60,9 @@ class Retriever:
         self._bm25 = None
         self._bm25_corpus = []
         self._bm25_meta = []
+        self._bm25_available = BM25Okapi is not None
+        if not self._bm25_available:
+            print("[retrieve] rank_bm25 unavailable; using vector-only retrieval")
 
     @property
     def reranker(self):
@@ -95,6 +96,8 @@ class Retriever:
         return [t for t in re.split(r'\W+', text.lower()) if len(t) > 1]
 
     def _bm25_search(self, query: str, k: int) -> List[Dict]:
+        if not self._bm25_available:
+            return []
         if self._bm25 is None:
             self._build_bm25_index()
         if self._bm25 is None or not self._bm25_corpus:

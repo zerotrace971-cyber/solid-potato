@@ -9,8 +9,8 @@ except ImportError:  # pragma: no cover - optional dependency may be missing
 
 load_dotenv()
 
-RAG_ROOT = Path(__file__).parent
-KB_ROOT = RAG_ROOT / "knowledge_base"
+RAG_ROOT = Path(__file__).resolve().parents[1]
+KB_ROOT = RAG_ROOT / "data" / "knowledge_base"
 CHROMA_PATH = RAG_ROOT / "chromadb"
 COLLECTION_NAME = "argus_security_kb"
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
@@ -28,6 +28,9 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 GEMINI_MODEL = "gemini-1.5-flash"
 GEMINI_MAX_TOKENS = 2048
 GEMINI_TEMPERATURE = 0.2
+REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+RAG_MEMORY_PREFIX = os.environ.get("RAG_MEMORY_PREFIX", "argus:rag:memory")
+RAG_MEMORY_WINDOW = int(os.environ.get("RAG_MEMORY_WINDOW", "6"))
 
-CHROMA_PATH.mkdir(exist_ok=True)
-KB_ROOT.mkdir(exist_ok=True)
+CHROMA_PATH.mkdir(parents=True, exist_ok=True)
+KB_ROOT.mkdir(parents=True, exist_ok=True)

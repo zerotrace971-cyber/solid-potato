@@ -7,8 +7,8 @@ import sys
 import json
 from pathlib import Path
 
-# Add rag/core to path so we can import our modules
-sys.path.insert(0, str(Path(__file__).parent))
+# Add Ai/ to path so we can import rag.core modules
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from rag.core.ingest import load_all
 from rag.core.embed import Embedder

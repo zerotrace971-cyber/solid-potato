@@ -114,6 +114,12 @@ class Retriever:
                 })
         return results
 
+    @staticmethod
+    def _matches_source_filter(metadata: Dict[str, Any], filter_source: Optional[str]) -> bool:
+        if not filter_source:
+            return True
+        return metadata.get("source") == filter_source
+
     def _vector_search(self, query: str, k: int,
                        where: Optional[Dict] = None) -> List[Dict]:
         query_emb = self.embedder.embed_query(query).tolist()
@@ -167,7 +173,10 @@ class Retriever:
         # 1. Vector search
         vec_results = self._vector_search(query, TOP_K_VECTOR, where=where)
         # 2. BM25 search
-        bm25_results = self._bm25_search(query, TOP_K_BM25)
+        bm25_results = [
+            result for result in self._bm25_search(query, TOP_K_BM25)
+            if self._matches_source_filter(result.get("metadata", {}), filter_source)
+        ]
 
         # 3. Merge by metadata doc_id (or text hash)
         merged: Dict[str, Dict] = {}

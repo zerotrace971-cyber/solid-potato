@@ -1,6 +1,10 @@
 import time
 import re
 import json
+import os
+import socket
+import urllib.error
+import urllib.request
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
@@ -10,6 +14,8 @@ from risk_scoring import score_event
 LOG_FILE = "/var/log/auth.log"
 ALERT_LOG = Path.home() / "soc-testing" / "logs" / "alerts.jsonl"
 EVENT_LOG = Path.home() / "soc-testing" / "logs" / "events.jsonl"
+API_URL = os.environ.get("ARGUS_API_URL", "http://127.0.0.1:8000/api/v1/logs")
+HOSTNAME = socket.gethostname()
 
 AUTH_FAILURE_PATTERN = r"Failed password for (?:invalid user )?(\w+) from ([\d.]+)"
 AUTH_SUCCESS_PATTERN = r"Accepted password for (\w+) from ([\d.]+)"
@@ -168,6 +174,53 @@ def write_jsonl(filepath, payload):
         f.write(json.dumps(payload) + "\n")
 
 
+def _severity_from_risk(risk_level):
+    return (risk_level or "low").lower()
+
+
+def _normalize_event(event, risk_level):
+    details = {}
+    if event.get("command"):
+        details["command"] = event["command"]
+    return {
+        "event_id": f"{event['event_type']}:{event.get('user', 'unknown')}:{int(time.time() * 1000)}",
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "host": HOSTNAME,
+        "source": "linux_auth",
+        "event_type": event.get("event_type", "UNKNOWN"),
+        "severity": _severity_from_risk(risk_level),
+        "actor": {
+            "source_ip": event.get("source_ip", ""),
+            "user": event.get("user", ""),
+        },
+        "target": {
+            "host": HOSTNAME,
+            "service": "ssh",
+        },
+        "details": details,
+        "raw": event.get("raw", ""),
+    }
+
+
+def post_to_api(event, risk_level, brute_force_detected=False):
+    payload = {
+        "event": _normalize_event(event, risk_level),
+        "brute_force_detected": brute_force_detected,
+    }
+    request = urllib.request.Request(
+        API_URL,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            body = response.read().decode("utf-8", errors="ignore")
+            print(json.dumps({"api_forwarded": True, "status": response.status, "body": body[:400]}))
+    except urllib.error.URLError as exc:
+        print(json.dumps({"api_forwarded": False, "error": str(exc), "url": API_URL}))
+
+
 def stream_and_collect():
     print(f"[SOC] Monitoring: {LOG_FILE}")
     print(f"[SOC] Alerts:     {ALERT_LOG}")
@@ -207,6 +260,7 @@ def stream_and_collect():
                 }
                 write_jsonl(EVENT_LOG, output)
                 print(json.dumps(output))
+                post_to_api(event, scored["risk_level"], brute_force_detected=False)
 
                 if scored["risk_level"] in ["HIGH", "MEDIUM"]:
                     alert = {
@@ -225,6 +279,7 @@ def stream_and_collect():
                     bf["trigger_event"] = event
                     write_jsonl(ALERT_LOG, bf)
                     print(json.dumps({"alert": bf}))
+                    post_to_api(event, bf.get("severity", "HIGH"), brute_force_detected=True)
 
     except KeyboardInterrupt:
         print("\n[SOC] Stopped by user")

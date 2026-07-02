@@ -6,6 +6,8 @@ import sys
 
 def main():
     print("ARGUS SOC Log Collector")
+    print("  API Backend:")
+    print("    - FastAPI: Ai/backend/api_server.py")
     print("  Collectors:")
     print("    - Windows: collector/win/collector.py")
     print("    - Windows Firewall: collector/win/firewall_collector.py")
@@ -16,6 +18,8 @@ def main():
     print("Run a collector directly, e.g.:")
     print("  python collector/linux/collector.py")
     print("  python collector/win/collector.py")
+    print("Run the API, e.g.:")
+    print("  uvicorn Ai.backend.api_server:app --reload")
 
 
 if __name__ == "__main__":

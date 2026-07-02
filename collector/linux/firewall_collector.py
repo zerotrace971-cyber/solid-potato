@@ -17,8 +17,12 @@ Run:
 import time
 import re
 import json
+import os
+import socket
 import queue
 import threading
+import urllib.error
+import urllib.request
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
@@ -40,6 +44,8 @@ except ImportError:
 # === Output paths (shared with auth collector) ===
 ALERT_LOG = Path.home()/ "logs" / "alerts.jsonl"
 EVENT_LOG = Path.home()/ "logs" / "events.jsonl"
+API_URL = os.environ.get("ARGUS_API_URL", "http://127.0.0.1:8000/api/v1/logs")
+HOSTNAME = socket.gethostname()
 
 
 # === Patterns ===
@@ -268,6 +274,62 @@ def write_jsonl(filepath, payload):
         f.write(json.dumps(payload) + "\n")
 
 
+def _severity_from_risk(risk_level):
+    return (risk_level or "low").lower()
+
+
+def _normalize_event(event, risk_level):
+    details = {
+        "action": event.get("action", ""),
+        "protocol": event.get("protocol", ""),
+        "source_port": event.get("source_port"),
+        "dest_port": event.get("dest_port"),
+        "service": event.get("suspicious_port", ""),
+        "service_name": event.get("service", ""),
+        "message": event.get("message", ""),
+        "command": event.get("command", ""),
+        "process": event.get("process", ""),
+    }
+    details = {key: value for key, value in details.items() if value not in ("", None)}
+    return {
+        "event_id": f"{event['event_type']}:{event.get('source_ip', 'unknown')}:{int(time.time() * 1000)}",
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "host": HOSTNAME,
+        "source": "linux_system",
+        "event_type": event.get("event_type", "UNKNOWN"),
+        "severity": _severity_from_risk(risk_level),
+        "actor": {
+            "source_ip": event.get("source_ip", ""),
+            "user": event.get("user", ""),
+        },
+        "target": {
+            "host": HOSTNAME,
+            "service": event.get("service", ""),
+        },
+        "details": details,
+        "raw": event.get("raw", ""),
+    }
+
+
+def post_to_api(event, risk_level):
+    payload = {
+        "event": _normalize_event(event, risk_level),
+        "brute_force_detected": False,
+    }
+    request = urllib.request.Request(
+        API_URL,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            body = response.read().decode("utf-8", errors="ignore")
+            print(json.dumps({"api_forwarded": True, "status": response.status, "body": body[:400]}))
+    except urllib.error.URLError as exc:
+        print(json.dumps({"api_forwarded": False, "error": str(exc), "url": API_URL}))
+
+
 # === File tailer (runs in its own thread) ===
 
 class FileTailer(threading.Thread):
@@ -375,6 +437,7 @@ def process_event(event):
     }
     write_jsonl(EVENT_LOG, output)
     print(json.dumps(output))
+    post_to_api(event, scored["risk_level"])
 
     # Risk-threshold alert
     if scored["risk_level"] in ("HIGH", "MEDIUM"):

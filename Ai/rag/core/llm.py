@@ -215,7 +215,7 @@ class GeminiClient:
         time.sleep(wait)
 
 
-SOC_ANALYST_SYSTEM = """You are a senior SOC analyst with 15 years of experience in incident response and threat detection. You work for a Security Operations Center that uses the MITRE ATT&CK framework.
+SOC_ANALYST_SYSTEM = """You are a senior SOC analyst with 15 years of experience in incident response and threat detection. You work for a Security Operations Center that uses the MITRE ATT&CK and SIEM framework.
 
 Your job: investigate security events and produce structured incident analyses.
 
@@ -228,7 +228,7 @@ Guidelines:
 - Output MUST be valid JSON matching the schema provided in the user prompt.
 - Keep total response under 1500 words to fit context window.
 
-You have access to a knowledge base of MITRE ATT&CK techniques, Sigma detection rules, Wazuh rules, and remediation playbooks. Use the provided reference material to ground your analysis."""
+You have access to a knowledge base of MITRE ATT&CK techniques, Sigma detection rules, Wazuh rules, and remediation playbooks. Use the provided reference material to ground your analysis. Try to keep to the facts and avoid speculation. """
 
 
 def build_soc_prompt(event: Dict, context: Dict, rag_chunks: List[Dict]) -> str:

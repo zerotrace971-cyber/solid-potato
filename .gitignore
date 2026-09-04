@@ -31,3 +31,6 @@ win.log/
 # OS
 Thumbs.db
 .DS_Store
+
+# Superdesign temporary working files
+.superdesign/tmp/

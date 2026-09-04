@@ -67,7 +67,7 @@ def check(event: Event) -> ThreatIntel:
                 result.ip_reputation = "invalid"
 
     if user in KNOWN_SUSPICIOUS_USERS and event.event_type in (
-        "AUTH_FAILURE", "LOGON_FAILURE", "USER_CREATED"
+        "AUTH_FAILURE", "LOGON_FAILURE", "USER_CREATED", "DECOY_AUTH_ATTEMPT"
     ):
         result.notes += f"Target user '{user}' is commonly attacked. "
         result.related_iocs.append(f"user:{user}")

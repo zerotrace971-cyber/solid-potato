@@ -45,6 +45,18 @@ def score(
     if event_type in {"MIMIKATZ_DETECTED", "EVENT_LOG_CLEARED", "AUDIT_LOG_CLEARED"}:
         total += 35
         factors.append({"factor": "high_risk_event_type", "points": 35})
+    elif event_type in {"CREDENTIAL_DISCOVERY", "PAYLOAD_TRANSFER"}:
+        total += 35
+        factors.append({"factor": "confirmed_honeypot_intrusion", "points": 35})
+    elif event_type in {"PERSISTENCE_ATTEMPT", "PRIVILEGE_ESCALATION", "DATABASE_DISCOVERY"}:
+        total += 25
+        factors.append({"factor": "high_intent_honeypot_activity", "points": 25})
+    elif event_type in {"PORT_SCAN", "DECOY_AUTH_ATTEMPT"}:
+        total += 20
+        factors.append({"factor": "decoy_access_signal", "points": 20})
+    elif event_type in {"SYSTEM_DISCOVERY", "HONEYPOT_INTERACTION", "HTTP_REQUEST"}:
+        total += 15
+        factors.append({"factor": "decoy_discovery", "points": 15})
     elif event_type in {"SUSPICIOUS_SERVICE", "SERVICE_INSTALLED", "USER_CREATED"}:
         total += 20
         factors.append({"factor": "persistence_signal", "points": 20})

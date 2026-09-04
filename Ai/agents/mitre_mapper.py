@@ -7,6 +7,66 @@ from schema import Event, MitreMapping
 
 
 EVENT_MAPPINGS: Dict[str, Dict[str, List[str] | float | str]] = {
+    "PORT_SCAN": {
+        "techniques": ["T1046"],
+        "tactics": ["Discovery"],
+        "confidence": 0.96,
+        "rationale": "Connections across multiple decoy ports indicate network service discovery.",
+    },
+    "HONEYPOT_SESSION_STARTED": {
+        "techniques": ["T1046"],
+        "tactics": ["Discovery"],
+        "confidence": 0.55,
+        "rationale": "A connection to a decoy service is a discovery signal until stronger intent is observed.",
+    },
+    "DECOY_AUTH_ATTEMPT": {
+        "techniques": ["T1110"],
+        "tactics": ["Credential Access"],
+        "confidence": 0.92,
+        "rationale": "Authentication against a deliberately non-production decoy is unauthorized credential access activity.",
+    },
+    "SYSTEM_DISCOVERY": {
+        "techniques": ["T1082"],
+        "tactics": ["Discovery"],
+        "confidence": 0.9,
+        "rationale": "Commands enumerate operating system, host, processes, or network configuration.",
+    },
+    "CREDENTIAL_DISCOVERY": {
+        "techniques": ["T1552"],
+        "tactics": ["Credential Access"],
+        "confidence": 0.94,
+        "rationale": "The interaction searches for unsecured credentials, private keys, or password stores.",
+    },
+    "PAYLOAD_TRANSFER": {
+        "techniques": ["T1105"],
+        "tactics": ["Command and Control"],
+        "confidence": 0.94,
+        "rationale": "The interaction attempts to transfer a tool or payload into the decoy.",
+    },
+    "PERSISTENCE_ATTEMPT": {
+        "techniques": ["T1053", "T1098"],
+        "tactics": ["Persistence", "Privilege Escalation"],
+        "confidence": 0.9,
+        "rationale": "The command attempts scheduled execution or account-based persistence.",
+    },
+    "PRIVILEGE_ESCALATION": {
+        "techniques": ["T1548"],
+        "tactics": ["Privilege Escalation", "Defense Evasion"],
+        "confidence": 0.86,
+        "rationale": "The command attempts to elevate the current decoy identity.",
+    },
+    "DATABASE_DISCOVERY": {
+        "techniques": ["T1083", "T1213"],
+        "tactics": ["Discovery", "Collection"],
+        "confidence": 0.84,
+        "rationale": "Queries enumerate a database or attempt to collect records from an information repository.",
+    },
+    "HTTP_REQUEST": {
+        "techniques": ["T1190"],
+        "tactics": ["Initial Access"],
+        "confidence": 0.4,
+        "rationale": "A request to a decoy public-facing application is retained as a possible exploitation precursor.",
+    },
     "AUTH_FAILURE": {
         "techniques": ["T1110"],
         "tactics": ["Credential Access"],

@@ -38,6 +38,7 @@ class GeminiClient:
             raise ValueError("GEMINI_API_KEY not set in config")
 
         self.model_name = GEMINI_MODEL
+        self.last_error: Optional[str] = None
         self.config: Dict[str, Any] = {
             "max_output_tokens": GEMINI_MAX_TOKENS,
             "temperature": GEMINI_TEMPERATURE,
@@ -85,6 +86,7 @@ class GeminiClient:
         max_retries: int = 3,
         response_mime_type: str = "text/plain",
     ) -> Optional[str]:
+        self.last_error = None
         current_config = self._build_config(system, response_mime_type=response_mime_type)
 
         for attempt in range(max_retries):
@@ -98,18 +100,30 @@ class GeminiClient:
                 if not text:
                     raise ValueError("Received empty response text from Gemini API")
 
+                self.last_error = None
                 return text
 
             except APIError as ae:
-                print(f"[llm] Gemini API Error (attempt {attempt + 1}): {ae}")
+                self.last_error = self._safe_error(ae)
+                print(f"[llm] Gemini API Error (attempt {attempt + 1}): {self.last_error}")
                 if attempt < max_retries - 1:
                     self._sleep_backoff(attempt)
             except Exception as e:
-                print(f"[llm] generation failed (attempt {attempt + 1}): {e}")
+                self.last_error = self._safe_error(e)
+                print(f"[llm] generation failed (attempt {attempt + 1}): {self.last_error}")
                 if attempt < max_retries - 1:
                     self._sleep_backoff(attempt)
 
         return None
+
+    @staticmethod
+    def _safe_error(exc: Exception) -> str:
+        """Return a dashboard-safe error without ever echoing the API key."""
+
+        message = str(exc).strip() or exc.__class__.__name__
+        if GEMINI_API_KEY:
+            message = message.replace(GEMINI_API_KEY, "[REDACTED_API_KEY]")
+        return message[:500]
 
     def _build_config(self, system: str, response_mime_type: str) -> Dict[str, Any]:
         config = self.config.copy()

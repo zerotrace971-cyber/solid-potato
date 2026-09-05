@@ -27,8 +27,9 @@ Both operations are idempotent and return the updated runtime status.
 GET /api/v1/honeypot/metrics
 ```
 
-Returns active sessions, total interactions, unique sources, average dwell time,
-critical session count, total sessions, and service distribution.
+Returns active sessions, inbound attacker actions, total telemetry events, unique
+sources, average dwell time, critical session count, total sessions, and service
+distribution. Outbound decoy replies do not increment attacker actions.
 
 ## Sessions and events
 
@@ -39,7 +40,20 @@ GET /api/v1/honeypot/events?limit=200&session_id={session_id}
 ```
 
 Detail responses include the session record, ordered transcript, latest SOC
-analysis, content hashes, latency, and protocol/provider metadata.
+analysis, saved analyst report, content hashes, latency, and protocol/provider
+metadata.
+
+## Gemini + RAG session analysis
+
+```http
+POST /api/v1/honeypot/sessions/{session_id}/analyze
+```
+
+Runs the existing ARGUS RAG pipeline against captured inbound evidence without
+blocking the live decoy response. The result includes summary, severity,
+findings, MITRE techniques, remediation, model/RAG state, and retrieved source
+snippets. It is persisted and returned by later session-detail and export calls.
+If Gemini or retrieval is unavailable, ARGUS saves an `evidence-only` report.
 
 ## Containment
 

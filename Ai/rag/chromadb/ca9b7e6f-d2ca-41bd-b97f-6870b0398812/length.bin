@@ -1,8 +1,1 @@
-# Linux Process and Service Investigation Reference
-
-## Suspicious process indicators
-
-- Unexpected shells spawned by web services such as `www-data`, `nginx`, or `apache`
-- Encoded or heavily obfuscated bash, python, curl, or wget commands
-- Processes launching from `/tmp`, `/dev/shm`, or a user home directory with execute permissions
-- Network utilities running immediately after authentication s
+invalid type: string "# Playbook: Event Log Cleared\n\n## Scope\n\nUse this playbook when Windows audit or event logs are cleared unexpectedly.\n\n## Immediate actions\n\n1. Treat the activity as potential defense evasion\n2. Identify the account and process responsible for clearing the log\n3. Retrieve forwarded logs from SIEM, collectors, or backup channels\nfe analysis environment\napplications

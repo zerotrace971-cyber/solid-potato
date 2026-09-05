@@ -7,6 +7,7 @@ const state = {
   status: null,
   filter: "all",
   refreshing: false,
+  analyzing: false,
   errorShown: false,
   lastGeminiError: null,
 };
@@ -147,6 +148,7 @@ function renderMetrics(metrics) {
   $("metric-sources").textContent = formatNumber(metrics.unique_sources);
   $("metric-dwell").textContent = formatDuration(metrics.mean_dwell_seconds);
   $("metric-active-context").textContent = metrics.active_sessions ? "Sessions currently engaged" : "No active contacts";
+  $("metric-event-context").textContent = `${formatNumber(metrics.telemetry_events)} telemetry events retained`;
   $("metric-critical").textContent = `${metrics.critical_sessions || 0} critical sessions`;
   renderDistribution(metrics.service_distribution || {});
 }
@@ -225,7 +227,7 @@ async function loadSession(sessionId) {
 
 function renderSessionDetail(session, events) {
   const enabled = Boolean(session);
-  ["contain-button", "block-button", "copy-ioc-button", "export-evidence-button", "export-button"].forEach((id) => { $(id).disabled = !enabled; });
+  ["contain-button", "block-button", "copy-ioc-button", "export-evidence-button", "export-button", "analyze-button"].forEach((id) => { $(id).disabled = !enabled; });
   if (!session) {
     $("transcript-title").textContent = "LIVE TRANSCRIPT";
     $("transcript-route").textContent = "No session selected";
@@ -233,6 +235,7 @@ function renderSessionDetail(session, events) {
     $("recording-state").textContent = "IDLE";
     $("recording-state").className = "";
     renderIntelligence(null);
+    renderAnalyst(null, null);
     renderTimeline([]);
     return;
   }
@@ -254,6 +257,7 @@ function renderSessionDetail(session, events) {
   }).join("") : '<div class="terminal-empty">The session connected but has not sent data yet.</div>';
   $("terminal-stream").scrollTop = $("terminal-stream").scrollHeight;
   renderIntelligence(session);
+  renderAnalyst(session.analyst_report, session);
   renderTimeline(events);
 }
 
@@ -284,6 +288,65 @@ function renderIntelligence(session) {
   $("fact-first-seen").textContent = timeOnly(session?.started_at);
   $("contain-button").disabled = !session || session.status !== "active";
   $("block-button").disabled = !session?.source_ip;
+}
+
+function renderAnalyst(report, session) {
+  const button = $("analyze-button");
+  const stale = Boolean(report && Number(report.evidence?.attacker_actions ?? 0) !== Number(session?.interactions || 0));
+  button.disabled = !session || state.analyzing;
+  button.textContent = state.analyzing ? "Analyzing evidence…" : stale ? "Update report" : report ? "Regenerate report" : "Analyze selected session";
+
+  if (!session) {
+    $("analyst-status").textContent = "SELECT A SESSION";
+    $("analyst-generated").textContent = "No report generated";
+    $("analyst-empty").textContent = "Select an attacker session, then generate a grounded SOC report from its captured evidence.";
+    $("analyst-empty").hidden = false;
+    $("analyst-content").hidden = true;
+    return;
+  }
+  if (!report) {
+    $("analyst-status").textContent = state.analyzing ? "ANALYZING" : "READY";
+    $("analyst-generated").textContent = `${session.interactions || 0} attacker action(s) available`;
+    $("analyst-empty").textContent = state.analyzing
+      ? "Gemini and the ARGUS knowledge base are analyzing this session. The live honeypot remains responsive."
+      : "Deterministic SOC scoring is already visible above. Generate the deeper Gemini + RAG report when you are ready.";
+    $("analyst-empty").hidden = false;
+    $("analyst-content").hidden = true;
+    return;
+  }
+
+  const level = String(report.severity || "info").toLowerCase();
+  const findings = Array.isArray(report.findings) ? report.findings : [];
+  const techniques = Array.isArray(report.mitre_techniques) ? report.mitre_techniques : [];
+  const remediation = report.remediation || {};
+  const sources = Array.isArray(report.sources) ? report.sources : [];
+  $("analyst-status").textContent = stale ? "REPORT OUTDATED" : report.status === "complete"
+    ? (report.rag?.references ? "GROUNDED REPORT" : "GEMINI REPORT")
+    : "EVIDENCE ONLY";
+  $("analyst-generated").textContent = report.generated_at ? `Generated ${new Date(report.generated_at).toLocaleString()}` : "Report available";
+  $("analyst-empty").hidden = true;
+  $("analyst-content").hidden = false;
+  $("analyst-severity").textContent = `${level.toUpperCase()} PRIORITY`;
+  $("analyst-severity").style.color = riskColor(level);
+  $("analyst-summary").textContent = report.summary || "No analyst summary returned.";
+  $("analyst-techniques").innerHTML = techniques.length
+    ? techniques.map((item) => `<span class="technique">${escapeHtml(item)}</span>`).join("")
+    : '<span class="placeholder-copy">No additional MITRE techniques</span>';
+  $("analyst-findings").innerHTML = findings.length
+    ? findings.map((item) => `<li>${escapeHtml(item)}</li>`).join("")
+    : "<li>No additional findings were produced.</li>";
+
+  const groups = [["Immediate", remediation.immediate], ["Short term", remediation.short_term], ["Long term", remediation.long_term]];
+  $("analyst-remediation").innerHTML = groups.filter(([, items]) => Array.isArray(items) && items.length).map(([label, items]) =>
+    `<div class="recommendation-group"><strong>${label}</strong><ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>`
+  ).join("") || '<span class="placeholder-copy">No response actions returned</span>';
+
+  const rag = report.rag || {};
+  const llm = report.llm || {};
+  $("analyst-engine").innerHTML = `<span class="engine-chip ${llm.enabled ? "online" : "offline"}">Gemini ${llm.enabled ? escapeHtml(llm.model || "enabled") : "unavailable"}</span><span class="engine-chip ${rag.enabled ? "online" : "offline"}">RAG ${rag.enabled ? `${rag.references || 0} refs` : "unavailable"}</span>${llm.error ? `<span class="engine-error" title="${escapeHtml(llm.error)}">Provider fallback active</span>` : ""}`;
+  $("analyst-sources").innerHTML = sources.length ? sources.map((source) =>
+    `<div class="source-item"><div><strong>${escapeHtml(source.label)}</strong><span>${escapeHtml(source.source)}</span></div>${source.score == null ? "" : `<em>${escapeHtml(source.score)}</em>`}<p>${escapeHtml(source.snippet || "Reference matched")}</p></div>`
+  ).join("") : '<span class="placeholder-copy">No RAG references matched this session.</span>';
 }
 
 function renderTimeline(events) {
@@ -340,6 +403,28 @@ async function toggleRuntime() {
   }
 }
 
+async function analyzeSelected() {
+  const session = state.selectedSession;
+  if (!session || state.analyzing) return;
+  state.analyzing = true;
+  renderAnalyst(session.analyst_report, session);
+  try {
+    const result = await api(`/api/v1/honeypot/sessions/${encodeURIComponent(session.session_id)}/analyze`, { method: "POST" });
+    if (state.selectedSession?.session_id === session.session_id) {
+      state.selectedSession.analyst_report = result.report;
+      renderAnalyst(result.report, state.selectedSession);
+    }
+    showToast(result.report?.status === "complete" ? "Gemini + RAG analyst report generated" : "Evidence-only analyst report generated");
+  } catch (error) {
+    showToast(`SOC analysis failed: ${error.message}`, true);
+  } finally {
+    state.analyzing = false;
+    if (state.selectedSession?.session_id === session.session_id) {
+      renderAnalyst(state.selectedSession.analyst_report, state.selectedSession);
+    }
+  }
+}
+
 async function containSelected() {
   const session = state.selectedSession;
   if (!session || !confirm(`Contain decoy session ${shortId(session.session_id)}?`)) return;
@@ -391,6 +476,7 @@ async function exportEvidence() {
 function bindEvents() {
   $("runtime-control").addEventListener("click", toggleRuntime);
   $("refresh-button").addEventListener("click", () => refresh(true));
+  $("analyze-button").addEventListener("click", analyzeSelected);
   $("contain-button").addEventListener("click", containSelected);
   $("block-button").addEventListener("click", blockSelectedSource);
   $("copy-ioc-button").addEventListener("click", copyIoc);

@@ -70,6 +70,10 @@ CREATE INDEX IF NOT EXISTS idx_sessions_started ON sessions(started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_sessions_source ON sessions(source_ip, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_telemetry_session ON telemetry(session_id, id DESC);
 CREATE INDEX IF NOT EXISTS idx_telemetry_timestamp ON telemetry(timestamp DESC);
+CREATE TABLE IF NOT EXISTS analyst_reports (
+    session_id TEXT PRIMARY KEY REFERENCES sessions(session_id),
+    report_json TEXT NOT NULL
+);
 """
 
 
@@ -91,6 +95,12 @@ class TelemetryStore:
             self._connection.execute("PRAGMA foreign_keys=ON")
             self._connection.execute("PRAGMA busy_timeout=5000")
             self._connection.executescript(SCHEMA)
+            # Upgrade historical counters without removing evidence. An action is
+            # one inbound request, login attempt, command, query, or client hello.
+            self._connection.execute("""UPDATE sessions SET interactions = (
+                SELECT COUNT(*) FROM telemetry t WHERE t.session_id = sessions.session_id
+                AND t.direction = 'inbound'
+            )""")
             self._connection.commit()
 
     def close(self) -> None:
@@ -170,7 +180,9 @@ class TelemetryStore:
             )
             inbound = event.byte_count if event.direction == "inbound" else 0
             outbound = event.byte_count if event.direction == "outbound" else 0
-            interaction = 1 if event.direction in {"inbound", "outbound"} else 0
+            # Server banners, prompts, Gemini replies, and SOC annotations remain
+            # telemetry, but only inbound peer activity is an attacker action.
+            interaction = int(event.direction == "inbound")
             self._connection.execute(
                 """UPDATE sessions
                    SET bytes_in = bytes_in + ?, bytes_out = bytes_out + ?,
@@ -262,6 +274,7 @@ class TelemetryStore:
         if row is None:
             return None
         result = self._session_dict(row)
+        result["analyst_report"] = self.get_analyst_report(session_id)
         if analyses:
             latest = self._investigation_dict(analyses[0])
             aggregate_mitre: List[str] = []
@@ -319,6 +332,10 @@ class TelemetryStore:
             event_count = self._connection.execute(
                 "SELECT COUNT(*) AS count FROM telemetry"
             ).fetchone()["count"]
+            totals = self._connection.execute("""SELECT COUNT(*) AS sessions,
+                COALESCE(SUM(interactions), 0) AS interactions,
+                COALESCE(SUM(status = 'active'), 0) AS active,
+                COALESCE(SUM(risk_level = 'critical'), 0) AS critical FROM sessions""").fetchone()
             sources = self._connection.execute(
                 "SELECT COUNT(DISTINCT source_ip) AS count FROM sessions"
             ).fetchone()["count"]
@@ -329,29 +346,40 @@ class TelemetryStore:
 
         now = datetime.now(timezone.utc)
         durations = []
-        active = 0
-        critical = 0
         for row in session_rows:
             started = self._parse_time(row["started_at"])
             ended = self._parse_time(row["ended_at"]) if row["ended_at"] else now
             if started and ended:
                 durations.append(max(0.0, (ended - started).total_seconds()))
-            if row["status"] == "active":
-                active += 1
-            if row["risk_level"] == "critical":
-                critical += 1
         mean_dwell = sum(durations) / len(durations) if durations else 0.0
         return {
-            "active_sessions": active,
-            "interactions_captured": int(event_count),
+            "active_sessions": int(totals["active"]),
+            "interactions_captured": int(totals["interactions"]),
+            "telemetry_events": int(event_count),
             "unique_sources": int(sources),
             "mean_dwell_seconds": round(mean_dwell, 1),
-            "critical_sessions": critical,
-            "total_sessions": len(session_rows),
+            "critical_sessions": int(totals["critical"]),
+            "total_sessions": int(totals["sessions"]),
             "service_distribution": {
                 str(row["service"]): int(row["count"]) for row in service_rows
             },
         }
+
+    def save_analyst_report(self, session_id: str, report: Dict[str, Any]) -> None:
+        with self._lock:
+            self._connection.execute(
+                """INSERT OR REPLACE INTO analyst_reports (session_id, report_json)
+                   VALUES (?, ?)""",
+                (session_id, json.dumps(report, default=str)),
+            )
+            self._connection.commit()
+
+    def get_analyst_report(self, session_id: str) -> Optional[Dict[str, Any]]:
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT report_json FROM analyst_reports WHERE session_id = ?", (session_id,)
+            ).fetchone()
+        return json.loads(row["report_json"]) if row else None
 
     def export_session(self, session_id: str) -> Optional[Dict[str, Any]]:
         session = self.get_session(session_id)

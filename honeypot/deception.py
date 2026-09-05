@@ -48,7 +48,7 @@ class IntentClassifier:
             "PAYLOAD_TRANSFER",
             "critical",
             0.96,
-            re.compile(r"\b(wget|curl|certutil|bitsadmin|scp|tftp|nc\s+-|chmod\s+\+x)\b", re.I),
+            re.compile(r"\b(wget|curl|invoke-webrequest|invoke-restmethod|start-bitstransfer|downloadstring|downloadfile|certutil|bitsadmin|scp|tftp|nc\s+-|chmod\s+\+x)\b", re.I),
         ),
         (
             "Credential access",
@@ -62,7 +62,7 @@ class IntentClassifier:
             "PERSISTENCE_ATTEMPT",
             "high",
             0.91,
-            re.compile(r"\b(crontab|systemctl\s+enable|useradd|adduser|authorized_keys|schtasks|reg\s+add)\b", re.I),
+            re.compile(r"\b(crontab|register-scheduledtask|new-service|systemctl\s+enable|useradd|adduser|authorized_keys|schtasks|reg\s+add)\b", re.I),
         ),
         (
             "Privilege escalation",
@@ -83,7 +83,7 @@ class IntentClassifier:
             "SYSTEM_DISCOVERY",
             "medium",
             0.82,
-            re.compile(r"\b(whoami|id\b|uname|hostname|ifconfig|ip\s+addr|netstat|ss\s+-|ps\s+|find\s+|ls\s+|dir\b|env\b)\b", re.I),
+            re.compile(r"\b(whoami|id\b|uname|hostname|get-process|get-service|get-childitem|get-computerinfo|get-localuser|ipconfig|ifconfig|ip\s+addr|netstat|ss\s+-|ps\s+|find\s+|ls\s+|dir\b|env\b)\b", re.I),
         ),
     )
 

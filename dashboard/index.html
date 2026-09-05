@@ -17,7 +17,7 @@
         <button class="nav-button active" data-target="overview" aria-label="Overview" title="Overview"><span>⌁</span></button>
         <button class="nav-button" data-target="sessions" aria-label="Sessions" title="Sessions"><span>›_</span></button>
         <button class="nav-button" data-target="telemetry" aria-label="Telemetry" title="Telemetry"><span>⌇</span></button>
-        <button class="nav-button" data-target="intel" aria-label="Intelligence" title="Intelligence"><span>◎</span></button>
+        <button class="nav-button" data-target="analyst" aria-label="SOC analyst" title="Gemini + RAG analyst"><span>✦</span></button>
       </nav>
       <div class="rail-bottom">
         <button class="nav-button" aria-label="Settings" title="Settings"><span>⚙</span></button>
@@ -46,7 +46,7 @@
       <div class="content">
         <section class="metrics" aria-label="Operational metrics">
           <article class="metric-card"><div class="metric-label"><span>Active sessions</span><span class="metric-icon cyan">●</span></div><div class="metric-value" id="metric-active">0</div><div class="metric-context" id="metric-active-context">No active contacts</div></article>
-          <article class="metric-card"><div class="metric-label"><span>Interactions captured</span><span class="metric-icon violet">◆</span></div><div class="metric-value" id="metric-events">0</div><div class="metric-context">Durable telemetry events</div></article>
+          <article class="metric-card"><div class="metric-label"><span>Attacker actions</span><span class="metric-icon violet">◆</span></div><div class="metric-value" id="metric-events">0</div><div class="metric-context" id="metric-event-context">0 telemetry events retained</div></article>
           <article class="metric-card"><div class="metric-label"><span>Unique sources</span><span class="metric-icon amber">●</span></div><div class="metric-value" id="metric-sources">0</div><div class="metric-context" id="metric-source-context">Across all decoy services</div></article>
           <article class="metric-card"><div class="metric-label"><span>Mean dwell time</span><span class="metric-icon green">◷</span></div><div class="metric-value" id="metric-dwell">0s</div><div class="metric-context" id="metric-critical">0 critical sessions</div></article>
         </section>
@@ -68,7 +68,7 @@
               </div>
               <div class="table-wrap">
                 <table>
-                  <thead><tr><th>Source</th><th>Service</th><th>Intent</th><th>Dwell</th><th>Events</th><th>Risk</th></tr></thead>
+                  <thead><tr><th>Source</th><th>Service</th><th>Intent</th><th>Dwell</th><th>Actions</th><th>Risk</th></tr></thead>
                   <tbody id="session-rows"></tbody>
                 </table>
                 <div class="empty-state" id="sessions-empty"><span class="empty-symbol">⌁</span><strong>No attacker sessions captured</strong><p>Start the deception grid, then connect to one of the five local decoy ports.</p></div>
@@ -97,9 +97,23 @@
               <div class="risk-copy"><strong id="risk-level">NO SIGNAL</strong><h3 id="intent-label">Waiting for telemetry</h3><div class="confidence-row"><span>Intent confidence</span><span class="mono" id="intent-confidence">0%</span></div><div class="progress"><i id="confidence-progress"></i></div></div>
             </div>
             <div class="intel-section"><span class="section-label">MITRE ATT&amp;CK</span><div class="technique-list" id="technique-list"><span class="placeholder-copy">No mapped techniques</span></div></div>
-            <div class="intel-section"><span class="section-label">SESSION FACTS</span><dl class="facts"><div><dt>Source</dt><dd id="fact-source">—</dd></div><div><dt>Fingerprint</dt><dd id="fact-fingerprint">—</dd></div><div><dt>Username</dt><dd id="fact-username">—</dd></div><div><dt>Bytes captured</dt><dd id="fact-bytes">0 B</dd></div><div><dt>Interactions</dt><dd id="fact-interactions">0</dd></div><div><dt>First seen</dt><dd id="fact-first-seen">—</dd></div></dl></div>
+            <div class="intel-section"><span class="section-label">SESSION FACTS</span><dl class="facts"><div><dt>Source</dt><dd id="fact-source">—</dd></div><div><dt>Fingerprint</dt><dd id="fact-fingerprint">—</dd></div><div><dt>Username</dt><dd id="fact-username">—</dd></div><div><dt>Bytes captured</dt><dd id="fact-bytes">0 B</dd></div><div><dt>Attacker actions</dt><dd id="fact-interactions">0</dd></div><div><dt>First seen</dt><dd id="fact-first-seen">—</dd></div></dl></div>
             <div class="intel-section response-section"><span class="section-label">RESPONSE</span><div class="response-grid"><button class="button button-primary" id="contain-button" disabled>Contain session</button><button class="button button-danger" id="block-button" disabled>Block source</button><button class="button button-secondary" id="copy-ioc-button" disabled>Copy IOC</button><button class="button button-secondary" id="export-evidence-button" disabled>Export evidence</button></div><p class="scope-note">Blocking applies to the ARGUS runtime only; host firewall changes require operator action.</p></div>
           </aside>
+        </section>
+
+        <section class="panel analyst-panel" id="analyst" aria-labelledby="analyst-heading">
+          <div class="panel-header analyst-header">
+            <div><span class="analyst-symbol">✦</span><h2 id="analyst-heading">SOC ANALYST · GEMINI + RAG</h2><span class="badge analyst-badge" id="analyst-status">SELECT A SESSION</span></div>
+            <div class="header-actions"><span class="mono subtle" id="analyst-generated">No report generated</span><button class="button button-primary" id="analyze-button" disabled>Analyze selected session</button></div>
+          </div>
+          <div class="analyst-empty" id="analyst-empty">Select an attacker session, then generate a grounded SOC report from its captured evidence.</div>
+          <div class="analyst-grid" id="analyst-content" hidden>
+            <article class="analyst-column analyst-summary"><span class="section-label">EXECUTIVE ASSESSMENT</span><h3 id="analyst-severity">NO REPORT</h3><p id="analyst-summary">—</p><div class="analyst-techniques" id="analyst-techniques"></div></article>
+            <article class="analyst-column"><span class="section-label">EVIDENCE-BASED FINDINGS</span><ul class="analyst-list" id="analyst-findings"></ul></article>
+            <article class="analyst-column"><span class="section-label">RECOMMENDED RESPONSE</span><div class="recommendation-groups" id="analyst-remediation"></div></article>
+            <article class="analyst-column"><span class="section-label">RAG EVIDENCE</span><div class="analyst-engine" id="analyst-engine"></div><div class="source-list" id="analyst-sources"></div></article>
+          </div>
         </section>
 
         <section class="lower-grid" id="telemetry">

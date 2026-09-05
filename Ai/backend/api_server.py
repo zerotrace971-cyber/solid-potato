@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import sys
 from contextlib import asynccontextmanager
@@ -24,6 +25,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from honeypot import HoneypotRuntime, HoneypotSettings, TelemetryStore  # noqa: E402
+from honeypot.models import utc_now  # noqa: E402
 
 
 DASHBOARD_ROOT = PROJECT_ROOT / "dashboard"
@@ -47,6 +49,146 @@ class RagQueryRequest(BaseModel):
 
 class BlockSourceRequest(BaseModel):
     source_ip: str = Field(min_length=1, max_length=128)
+
+
+def _string_list(value: Any, fallback: Optional[List[str]] = None) -> List[str]:
+    if isinstance(value, list):
+        return [str(item)[:1000] for item in value if str(item).strip()][:20]
+    if isinstance(value, str) and value.strip():
+        return [value[:1000]]
+    return list(fallback or [])
+
+
+def _build_session_analysis_event(
+    session: Dict[str, Any], events: List[Dict[str, Any]]
+) -> Dict[str, Any]:
+    inbound = [event for event in events if event.get("direction") == "inbound"]
+    transcript = "\n".join(
+        f"{event.get('timestamp', '?')} {event.get('event_type', 'ACTIVITY')}: "
+        f"{event.get('content', '')}" for event in inbound[-50:]
+    )[:8000]
+    return {
+        "event_id": f"session-report-{session['session_id']}",
+        "timestamp": utc_now(),
+        "host": session.get("persona", "argus-decoy"),
+        "source": "argus_honeypot",
+        "event_type": "HONEYPOT_SESSION_REVIEW",
+        "severity": session.get("risk_level", "info"),
+        "actor": {
+            "source_ip": session.get("source_ip"),
+            "source_port": session.get("source_port"),
+            "user": session.get("username"),
+        },
+        "target": {
+            "host": "argus-decoy",
+            "service": session.get("service"),
+            "port": session.get("destination_port"),
+        },
+        "details": {
+            "session_id": session.get("session_id"),
+            "attacker_actions": session.get("interactions", 0),
+            "client_fingerprint": session.get("client_fingerprint"),
+            "intent": session.get("intent"),
+            "sandboxed": True,
+            "executed": False,
+        },
+        "raw": transcript or "Connection established; no inbound payload captured.",
+    }
+
+
+def _format_analyst_report(
+    session: Dict[str, Any], pipeline_result: Dict[str, Any], pipeline: Any
+) -> Dict[str, Any]:
+    deterministic = (session.get("analysis") or {}).get("investigation") or {}
+    analysis = pipeline_result.get("analysis") or {}
+    if not isinstance(analysis, dict):
+        analysis = {}
+    chunks = pipeline_result.get("rag_chunks") or []
+    sources = []
+    for index, chunk in enumerate(chunks[:5], 1):
+        metadata = chunk.get("metadata") or {}
+        label = (
+            metadata.get("technique_id")
+            or metadata.get("rule_id")
+            or metadata.get("file")
+            or f"reference-{index}"
+        )
+        score = next(
+            (
+                chunk.get(key)
+                for key in ("rerank_score", "hybrid_score", "vector_score", "bm25_score")
+                if chunk.get(key) is not None
+            ),
+            None,
+        )
+        sources.append(
+            {
+                "label": str(label)[:160],
+                "source": str(metadata.get("source", "knowledge-base"))[:160],
+                "snippet": str(chunk.get("text", "")).strip().replace("\n", " ")[:420],
+                "score": round(float(score), 3) if score is not None else None,
+            }
+        )
+
+    risk = deterministic.get("risk") or {}
+    mitre = _string_list(
+        analysis.get("mitre_techniques"),
+        _string_list(
+            pipeline_result.get("rag_mitre_techniques"),
+            (session.get("analysis") or {}).get("mitre") or [],
+        ),
+    )
+    default_findings = [
+        f"Observed {session.get('interactions', 0)} attacker action(s) against "
+        f"the {session.get('service', 'unknown')} decoy.",
+        f"Deterministic SOC intent: {session.get('intent', 'Reconnaissance')} "
+        f"with risk {session.get('risk_score', 0)}/100.",
+    ]
+    remediation = analysis.get("remediation") or {}
+    if not isinstance(remediation, dict):
+        remediation = {"immediate": _string_list(remediation)}
+    normalized_remediation = {
+        "immediate": _string_list(
+            remediation.get("immediate"),
+            ["Preserve and export this decoy session for investigation."],
+        ),
+        "short_term": _string_list(
+            remediation.get("short_term"),
+            ["Correlate the source with firewall, identity, endpoint, and DNS telemetry."],
+        ),
+        "long_term": _string_list(remediation.get("long_term")),
+    }
+    error = analysis.get("error") or getattr(getattr(pipeline, "llm", None), "last_error", None)
+    summary = str(analysis.get("summary") or risk.get("rationale") or (
+        f"ARGUS observed {session.get('intent', 'reconnaissance').lower()} activity "
+        f"from {session.get('source_ip', 'an unknown source')} against the "
+        f"{session.get('service', 'decoy')} service."
+    ))[:3000]
+    llm = getattr(pipeline, "llm", None)
+    return {
+        "session_id": session["session_id"],
+        "generated_at": utc_now(),
+        "status": "complete" if analysis.get("summary") and not error else "evidence-only",
+        "summary": summary,
+        "severity": str(analysis.get("severity") or session.get("risk_level", "info")),
+        "findings": _string_list(analysis.get("findings"), default_findings),
+        "mitre_techniques": mitre,
+        "remediation": normalized_remediation,
+        "sources": sources,
+        "query": str(pipeline_result.get("query", ""))[:8000],
+        "evidence": {
+            "attacker_actions": int(session.get("interactions", 0)),
+            "source_ip": session.get("source_ip"),
+            "service": session.get("service"),
+        },
+        "rag": {"enabled": getattr(pipeline, "retriever", None) is not None, "references": len(sources)},
+        "llm": {
+            "enabled": llm is not None,
+            "model": getattr(llm, "model_name", None),
+            "error": str(error)[:500] if error else None,
+        },
+        "safety": {"sandboxed": True, "attacker_input_executed": False},
+    }
 
 
 def _env_flag(name: str, default: bool) -> bool:
@@ -220,6 +362,31 @@ def create_app(
                 reversed(store.list_events(session_id=session_id, limit=500))
             ),
         }
+
+    @app.post("/api/v1/honeypot/sessions/{session_id}/analyze")
+    async def analyze_honeypot_session(session_id: str) -> Dict[str, Any]:
+        """Generate and persist an on-demand Gemini + RAG session report."""
+
+        session = store.get_session(session_id)
+        if session is None:
+            raise HTTPException(status_code=404, detail="Session not found")
+        events = list(reversed(store.list_events(session_id=session_id, limit=500)))
+        deterministic = (session.get("analysis") or {}).get("investigation") or {}
+        try:
+            pipeline = get_rag_pipeline()
+            pipeline_result = await asyncio.to_thread(
+                pipeline.analyze,
+                _build_session_analysis_event(session, events),
+                deterministic.get("threat_intel") or {},
+                deterministic.get("correlation") or {},
+                deterministic.get("mitre") or {},
+                deterministic.get("risk") or {},
+            )
+            report = _format_analyst_report(session, pipeline_result, pipeline)
+            store.save_analyst_report(session_id, report)
+            return {"report": report}
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     @app.post("/api/v1/honeypot/sessions/{session_id}/contain")
     async def contain_honeypot_session(session_id: str) -> Dict[str, Any]:

@@ -5,8 +5,12 @@ ARGUS stores three logical record types in SQLite.
 ## Sessions
 
 A session contains its ID, source/destination tuple, service, protocol, persona,
-status, timestamps, byte totals, interaction count, fingerprint, username,
+status, timestamps, byte totals, attacker-action count, fingerprint, username,
 highest risk, dominant intent, confidence, and containment state.
+
+One attacker action is one inbound request, command, login attempt, database
+query, or client hello. Outbound banners/replies and system annotations remain
+events but do not increment this counter.
 
 ## Events
 
@@ -36,6 +40,13 @@ Important types include `HONEYPOT_SESSION_STARTED`, `PORT_SCAN`,
 Meaningful inbound events receive deterministic SOC enrichment. An investigation
 contains risk score/level, intent/confidence, MITRE technique IDs, rationale, and
 the original agent outputs used to reach the verdict.
+
+## Analyst reports
+
+The latest on-demand Gemini + RAG report is stored per session. It includes the
+executive summary, evidence-based findings, MITRE mappings, response actions,
+retrieved reference snippets, provider state, and generation timestamp. The
+report never changes the deterministic session risk score.
 
 ## Evidence integrity
 

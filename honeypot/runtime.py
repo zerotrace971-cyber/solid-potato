@@ -14,6 +14,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
+from urllib.parse import unquote_plus
 
 from .config import HoneypotSettings, ServiceProfile
 from .deception import GeminiDeceptionEngine, IntentClassifier
@@ -448,7 +449,22 @@ class HoneypotRuntime:
         reader: asyncio.StreamReader,
         writer: asyncio.StreamWriter,
     ) -> None:
-        raw = await self._read_http_request(reader)
+        try:
+            raw = await self._read_http_request(reader, writer)
+        except (
+            ValueError,
+            asyncio.TimeoutError,
+            asyncio.LimitOverrunError,
+            asyncio.IncompleteReadError,
+        ):
+            await self._send(
+                session_id,
+                writer,
+                b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                "DECOY_HTTP_RESPONSE",
+                metadata={"provider": "protocol-handler"},
+            )
+            return
         if not raw:
             return
         method, path, version, headers, body = self._parse_http(raw)
@@ -458,7 +474,11 @@ class HoneypotRuntime:
             key: ("[REDACTED]" if key.lower() in SECRET_HEADERS else value[:500])
             for key, value in headers.items()
         }
-        safe_body = self._redact_http_body(self._preview(body))
+        decoded_body = self._preview(body)
+        if "application/x-www-form-urlencoded" in headers.get("content-type", ""):
+            decoded_body = unquote_plus(decoded_body)
+        safe_body = self._redact_http_body(decoded_body)
+        path = self._redact_http_body(unquote_plus(path))
         request_summary = f"{method} {path} {version}\n{safe_body}".strip()
         intent = IntentClassifier.classify(request_summary)
         event_type = "HTTP_REQUEST" if intent.event_type == "HONEYPOT_INTERACTION" else intent.event_type
@@ -509,6 +529,8 @@ class HoneypotRuntime:
             "X-Content-Type-Options: nosniff\r\n"
             "Connection: close\r\n\r\n"
         ).encode()
+        if method == "HEAD":
+            payload = b""
         await self._send(
             session_id,
             writer,
@@ -733,26 +755,50 @@ class HoneypotRuntime:
         except (asyncio.LimitOverrunError, ValueError):
             return await reader.read(self.settings.max_input_bytes)
 
-    async def _read_http_request(self, reader: asyncio.StreamReader) -> bytes:
-        try:
-            headers = await asyncio.wait_for(
-                reader.readuntil(b"\r\n\r\n"),
-                timeout=self.settings.read_timeout_seconds,
-            )
-        except (asyncio.IncompleteReadError, asyncio.LimitOverrunError):
-            return await reader.read(self.settings.max_input_bytes)
-        headers = headers[: self.settings.max_input_bytes]
-        match = re.search(br"(?im)^content-length:\s*(\d+)", headers)
-        length = min(int(match.group(1)), self.settings.max_input_bytes - len(headers)) if match else 0
-        body = (
-            await asyncio.wait_for(
-                reader.readexactly(length),
-                timeout=self.settings.read_timeout_seconds,
-            )
-            if length > 0
-            else b""
-        )
-        return (headers + body)[: self.settings.max_input_bytes]
+    async def _read_http_request(
+        self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+    ) -> bytes:
+        async def read(awaitable):
+            return await asyncio.wait_for(awaitable, self.settings.read_timeout_seconds)
+
+        headers = await read(reader.readuntil(b"\r\n\r\n"))
+        budget = self.settings.max_input_bytes - len(headers)
+        if budget < 0:
+            raise ValueError("Request headers too large")
+        _, _, _, fields, _ = self._parse_http(headers)
+        if fields.get("transfer-encoding") and fields.get("content-length"):
+            raise ValueError("Ambiguous request framing")
+        length = int(fields.get("content-length", "0"))
+        if length < 0 or length > budget:
+            raise ValueError("Request body too large")
+        if fields.get("expect", "").lower() == "100-continue":
+            writer.write(b"HTTP/1.1 100 Continue\r\n\r\n")
+            await writer.drain()
+        if "transfer-encoding" not in fields:
+            return headers + (await read(reader.readexactly(length)) if length else b"")
+        if fields["transfer-encoding"].lower() != "chunked":
+            raise ValueError("Unsupported transfer encoding")
+        chunks = []
+        # Bound decoded body AND framing/trailers, including many tiny chunks.
+        while True:
+            line = await read(reader.readuntil(b"\r\n"))
+            budget -= len(line)
+            size = int(line.split(b";", 1)[0].strip(), 16)
+            if size < 0 or size > budget or budget < 0:
+                raise ValueError("Chunk exceeds request limit")
+            if size == 0:
+                while True:
+                    trailer = await read(reader.readuntil(b"\r\n"))
+                    budget -= len(trailer)
+                    if budget < 0:
+                        raise ValueError("Trailers exceed request limit")
+                    if trailer == b"\r\n":
+                        return headers + b"".join(chunks)
+            chunk = await read(reader.readexactly(size + 2))
+            budget -= len(chunk)
+            if budget < 0 or not chunk.endswith(b"\r\n"):
+                raise ValueError("Malformed chunk")
+            chunks.append(chunk[:-2])
 
     async def _read_mysql_packet(
         self, reader: asyncio.StreamReader
